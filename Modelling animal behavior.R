@@ -111,3 +111,108 @@ cohort.1 %>%
   df
 
 create_report(df)
+
+# start here
+cohort.1 <- read.csv("cohort_1_final.csv") %>%
+  select(Day, Subject, Session, Time, Response, Reward, Trial) %>%
+  mutate(Subject = as.factor(Subject)) %>%
+  group_by(Day, Subject, Session) %>%
+  mutate(cumResponse = cumsum(Response)) %>%
+  mutate(cumReward = cumsum(Reward))
+
+plot <- ggplot(cohort.1, aes(colour = as.factor(Day), x = Trial)) +
+  geom_point(aes(y = cumResponse))
+plot
+ggplotly(plot)
+
+
+check2 <- cohort.1 %>% filter(Trial == 0)
+
+# days to competion data
+cohort.1.daily.rewards <- cohort.1 %>%
+  group_by(Day, Subject, Session) %>%
+  summarise(totalReward =max(cumReward))
+
+plot <- ggplot(cohort.1.daily.rewards, aes(x = Day, y = totalReward, colour = Session ))+
+  geom_point() +
+  facet_wrap(~Subject)
+plot
+
+# left first : 2, 4, 8, 10, 12, 14, 16
+# right first : 3, 9, 11, 13, 15
+
+cohort.1 <- cohort.1 %>%
+  mutate(SessionOrder = case_when(
+    Subject %in% c(2, 4, 8, 10, 12, 14, 16) & Session == "weathertaskL" ~ 1,
+    Subject %in% c(2, 4, 8, 10, 12, 14, 16) & Session == "weathertaskR" ~ 2,
+    Subject %in% c(2, 4, 8, 10, 12, 14, 16) & Session == "weatherhardL" ~ 3,
+    Subject %in% c(2, 4, 8, 10, 12, 14, 16) & Session == "weatherhardR" ~ 4,
+    Subject %in% c(2, 4, 8, 10, 12, 14, 16) & Session == "weatherharderL" ~ 5,
+    Subject %in% c(2, 4, 8, 10, 12, 14, 16) & Session == "weatherharderR" ~ 6,
+    Subject %in% c(3, 9, 11, 13, 15) & Session == "weathertaskR" ~ 1,
+    Subject %in% c(3, 9, 11, 13, 15) & Session == "weathertaskL" ~ 2,
+    Subject %in% c(3, 9, 11, 13, 15) & Session == "weatherhardR" ~ 3,
+    Subject %in% c(3, 9, 11, 13, 15) & Session == "weatherhardL" ~ 4,
+    Subject %in% c(3, 9, 11, 13, 15) & Session == "weatherharderR" ~ 5,
+    Subject %in% c(3, 9, 11, 13, 15) & Session == "weatherharderL" ~ 6
+  ))
+
+# days in each session
+
+cohort.1.sessiondays <- cohort.1 %>%
+  group_by(Subject, SessionOrder) %>%
+  summarise(MaxDays = max(Day)-min(Day)+1)
+
+cohort.1.sessiondays.summary <- cohort.1.sessiondays %>%
+  ungroup() %>%
+  mutate(Subject = as.numeric(Subject)) %>%
+  mutate(SessionOrder= as.factor(SessionOrder)) %>%
+  group_by(SessionOrder) %>%
+  summarise(meanDays = mean(MaxDays), SEMDays = sd(MaxDays)/n(), n = n())
+
+sessiondays.plot <- ggplot(cohort.1.sessiondays.summary, aes(x=SessionOrder, y = meanDays, fill = SessionOrder)) +
+  geom_col()+
+  geom_errorbar(aes(ymin = meanDays-SEMDays, ymax = meanDays + SEMDays)) +
+  ggtitle("Mean Days in Each Stage")
+sessiondays.plot
+
+cohort.1 <- cohort.1 %>%
+  group_by(Day, Subject, SessionOrder) %>%
+  mutate(TimeBetween = Time - lag(Time)) %>%
+  ungroup()
+
+cohort.1$TimeBetween <- replace_na(cohort.1$TimeBetween, 0)
+
+
+
+# daily summaries by animal
+
+cohort.1.daily.individuals <- cohort.1 %>%
+  group_by(Day, Subject, SessionOrder) %>%
+  summarise(TotalTrials = max(Trial),
+            TotalReward = sum(Reward),
+            TotalCorrect = sum(Response == 1),
+            TotalIncorrect = sum(Response == -1),
+            TotalOmissions = sum(Response == 0),
+            MeanTime = mean(TimeBetween))
+
+plot <- ggplot(cohort.1.daily.individuals, aes(x = Day, shape = as.factor(SessionOrder))) +
+  geom_point(aes(y = TotalReward, colour = "Reward"))+
+  geom_line(aes(y = TotalCorrect, colour = "Correct"))+
+  geom_line(aes(y = TotalIncorrect, colour = "Incorrect"))+
+  geom_line(aes(y = TotalOmissions, colour = "Omissions"))+
+  facet_wrap(~Subject)
+plot
+ggplotly(plot)
+
+#average trial times in sessions
+ggplot(cohort.1.daily.individuals, aes(x = Day, shape = as.factor(SessionOrder))) +
+  geom_point(aes(y=MeanTime)) +
+  facet_wrap(~Subject)
+
+# "blocks" of 10 trials
+
+cohort.1 <- cohort.1 %>%
+  mutate(Block = ceiling(Trial/10)) %>%
+  mutate(Block = replace(Block, Block==0, 1))
+
